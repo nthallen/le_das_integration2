@@ -3,6 +3,12 @@ Demodispnc.cc
 Demodispncoui.cc
 Demodispnc.o
 Demodispncoui.o
+Demoalgoa.tmc
+Demoalgo.cc
+Demoalgooui.cc
+Demoalgo.o
+Demoalgooui.o
+doit.dep
 Democmd.cc
 Democmd.dat
 Democmd.h
@@ -31,6 +37,8 @@ Demotblnc.tmc.dep
 *.stackdump
 Makefile
 Demodispnc
+Demoalgo
+doit
 Democltnc
 Demosrvr
 Democol
