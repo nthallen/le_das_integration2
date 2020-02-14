@@ -3,8 +3,8 @@
                 msg "Running script interact"
   Launch      tm_bfr bfr -s Both -v
   Launch      -TMC-  lgr -N `mlf_find LOG` -n lgr
-  Launch      tm_gen Democol -v
-  Launch      cmd    Demosrvr -s Both -v
+  Launch      tm_gen @NAME@col -v
+  Launch      cmd    @NAME@srvr -s Both -v
 # Launch      -      driver -v
   Launch      -      tmdf
-  Launch      -      Demoalgo -v
+  Launch      -      @NAME@algo -v
