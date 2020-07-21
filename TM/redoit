@@ -1,0 +1,292 @@
+#! /bin/bash
+
+# Handle commandline arguments, specifically -h
+
+function print_usage {
+cat <<EOF
+redoit [options]
+  Starts Instrument operation
+redoit [options] stop
+  Send Quit command to running system (monarch_cmd)
+redoit [options] not
+  Shuts down any straggling processes after system has stopped (dasctl -Q)
+redoit [options] wait
+  Does not interact with instrument until it is up and operating (dasctl -S)
+
+options:
+  -s use screen for text-mode data display (default)
+  -a use ASCII chars for line-drawing
+  -p <run> play back <run>
+  -S <session> specify the session (used internally)
+EOF
+}
+
+pause=yes
+
+function hit_any_key {
+  if [ $pause = yes ]; then
+    echo Hit Enter to continue:
+    read j
+  fi
+}
+
+function select_arg {
+  n=$1
+  shift $n
+  echo $1
+}
+
+statusready=no
+function isready {
+  quiet=no
+  [ "$1" = "quiet" ] && quiet=yes
+  msgf -2 "dasctl $TM_OPT -VS"
+  dasctl $TM_OPT -VS 2>&1 |
+  ( while read j; do
+      [ $quiet = no ] && echo $j
+      sj=${j#* Status: Ready:}
+      if [ "$j" != "$sj" ]; then
+        exit 0
+      fi
+    done
+    exit 1
+  ) && statusready=yes
+}
+
+srcmode=realtime
+dispmode=screen
+ncopts=''
+while getopts "hap:S:s" opt; do
+  case $opt in
+    h) print_usage; exit 0;;
+    a) ncopts='-a';;
+    p) srcmode=playback; Run=$OPTARG;;
+    s) dispmode=screen; dispmodescreen=1;;
+    S) session=$OPTARG;;
+    \?) exit 1;; # getopts reports the error
+    :) exit 1;; # getopts reports the error
+  esac
+done
+
+# We haven't finished parsing the arguments, but we can
+# be pretty sure whatever it is, we will need to read
+# the configuration to execute it.
+. /usr/local/libexec/load_exconfig.sh
+msgProgram=redoit
+[ -n "$CFG_ERROR" ] && msgf 3 "$CFG_ERROR"
+[ -n "$FlightNode" ] && export FlightNode
+
+arg=`select_arg $OPTIND $*`
+case "$arg" in
+  stop)
+    echo "Trying to stop the instrument"
+    monarch_cmd -V $CMD_OPT quit
+    exit 0;;
+  not)
+    echo "Trying harder to stop the instrument"
+    dasctl $TM_OPT -VQ
+    exit 0;;
+  wait)
+    [ $srcmode = playback ] &&
+      msgf 3 "wait is not supported for playback"
+    cmd=wait;;
+  '') cmd=start;;
+  *) msgf 3 "Invalid command: '$arg'";;
+esac
+
+case $dispmode in
+  screen) nc=nc; ncopt=$ncopts;;
+  pterm) nc=nc; ncopt=$ncopts;;
+  photon) nc='';;
+  *) nl_error "Unknown dispmode: '$dispmode'";;
+esac
+
+# Everything before this point will be executed twice,
+# once before starting screen, once after, so we should
+# limit any informational messages.
+if [ -z "$STY" ]; then
+  # echo "cmd is '$cmd' srcmode is '$srcmode' dispmode is '$dispmode'"
+  # hit_any_key
+  screen -t redoit $0 $*
+  clear # after exiting screen
+  echo "redoit completed, screen closed"
+  exit 0
+fi
+
+session=$$
+# session_opt=-S$session
+screen -X logfile "redoit.$session.log"
+screen -X log on
+#echo "Running under screen, session $session"
+#echo "cmd is '$cmd' srcmode is '$srcmode' dispmode is '$dispmode'"
+#hit_any_key
+
+# We are now in 'start' or 'wait'
+# srcmode is playback or realtime, though could eventually include
+# SerIn and/or InetIn.
+
+# lcllogfile is the file we want local memo to write to
+# rmtlogfile is the file we would like to display with less,
+#  even if it is not really local.
+logfileroot=$Experiment
+if [ $srcmode = realtime ]; then
+  [ $FltNode_Access = Remote ] &&
+    lcllogfile=$logfileroot.clt.log
+  if [ $FltNode_Access = Remote ]; then
+    rmtlogfile=$HomeDir/$logfileroot.log
+  else
+    rmtlogfile=$logfileroot.log
+  fi
+else # not realtime
+  RemEx=$Experiment
+  Experiment=$RemEx.PB.$session
+  lcllogfile=$Experiment.log
+fi
+
+# Startup local memo: The only case where we would not want to
+# start a local memo is if srcmode is realtime and there is no
+# FlightNode. In that case, we are starting up an interact script
+# on the local machine, and interact scripts start up their own
+# memo.
+[ -n "$lcllogfile" ] &&
+  Launch memo memo -o $lcllogfile
+
+lclsrvr=playbacksrvr
+batchfile=interact
+client=playbackclt
+[ $srcmode = realtime ] && client=Democlt
+
+# mkdoit can add more logic here.
+# We do not launch lclsrvr if $srcmode = realtime -a -z "$FlightNode"
+# (i.e. running flight.sh on the local machine)
+# The other $srcmodes (SerIn, InetIn) will default to playbacksrvr,
+# but can be overridden.
+[ $srcmode = realtime -a $FltNode_Access = Local ] && lclsrvr=''
+
+if [ $cmd = start ]; then
+  if [ $srcmode = playback ]; then
+    # Startup playback modules:
+    Launch tm_bfr -s Unix
+    Launch tm_gen rdr -P $ddir -a
+    #   # playbacksrvr (started later via $lclsrvr)
+  elif [ $srcmode = realtime ]; then
+    if [ $SERVICE = Installed ]; then
+      dasctl_opt='-r'
+      [ -n "$batchfile" ] && dasctl_opt="-R $batchfile"
+      msgf 0 "Running isready quiet, TM_OPT=$TM_OPT"
+      isready quiet
+      if [ $statusready = no ]; then
+        msgf 0 "running dasctl -V $TM_OPT $dasctl_opt"
+        dasctl -V $TM_OPT $dasctl_opt
+        isready
+      fi
+    else
+      # AdHoc startup goes here: Something like:
+      screen -t /usr/local/sbin/flight.sh 
+    fi
+  else
+    msgf 3 "srcmode='$srcmode' not implemented in start"
+  fi
+elif [ $cmd = wait ]; then
+  [ $srcmode = realtime ] || msgf 3 "Invalid srcmode '$srcmode'"
+  msgf 0 "Waiting for startup"
+  if [ $SERVICE = Installed ]; then
+    while [ statusready = no ]; do
+      isready quiet
+      sleep 1
+    done
+  else
+    waitfor /var/run/linkeng/$Experiment/tm_bfr forever
+    msgf 0 "found tm_bfr, waiting for command server"
+    waitfor /var/run/linkeng/$Experiment/server forever
+  fi
+else
+  msgf 3 "Unexpected invalid cmd '$cmd'"
+fi
+
+# At this point, we can assume that memo, tm_bfr and server
+# are running, so we can start all the UI clients
+# Display programs, keyboard client, etc.
+# We will point getcon and disp programs to the lclsrvr, but
+# still need to figure out how to tell lclsrvr to quit.
+# I guess I need a Stopper app to send Quit where I want.
+# That would work for this as well as 'doit stop'.
+[ -n "$lclsrvr" ] &&
+  Launch cmd $lclsrvr
+if [ -n "$rmtlogfile" ]; then
+  # log="-Logfile \"less.$session.log\" -L"
+  if [ $FltNode_Access = Remote ]; then
+    msgf 0 "Starting less on remote system"
+    screen -t logfile /bin/sh -c "echo \$\$ >less.pid.$session; exec $SSH_CMD less +F $rmtlogfile"
+  else
+    msgf 0 "Starting less on local system"
+    screen -t logfile /bin/sh -c "echo \$\$ >less.pid.$session; exec less +F $rmtlogfile"
+  fi
+fi
+screen -t Demo /usr/local/sbin/getcon -V scr1 $session
+screen -X width -w 69
+#screen -X height -w 8
+# screen -X focus
+#######LOOK HERE
+screen -t clt /usr/local/sbin/getcon -V clt $session
+screen -X height -w 2
+screen -X width -w 80
+# screen -X focus
+# screen -X select Demo
+screen -X select redoit
+
+msgf 0 Handling less.pid.$session
+less_pid=''
+if [ -f less.pid.$session ]; then
+  less_pid=`cat less.pid.$session`
+  rm -f less.pid.$session
+  msg -V "Recovered less_pid='$less_pid'"
+fi
+
+# Now collect display consoles for each disp screen and clt
+msgf 0 collecting screens
+for screen in scr1 clt; do
+  term=''
+  if waitfor pty.$screen.$session 3; then
+    term=`cat pty.$screen.$session`
+    rm pty.$screen.$session
+    eval ${screen}_term=$term
+  else
+    msgf 2 pty.$screen.$session did not appear
+  fi
+done
+
+if [ -n "$scr1_term" ]; then
+  msgf 0 "Starting Demodisp$nc $ncopt $TM_OPT $scr1_term"
+  Launch -TMC- Demodisp$nc $ncopt $TM_OPT $scr1_term
+else
+  msgf 1 "Skipping Demodisp$nc"
+fi
+if [ -n "$clt_term" -o -n "$scr1_term" ]; then
+  screen -X split
+  screen -X focus
+  screen -X resize 3
+  screen -X select clt
+  screen -X focus
+  screen -X select Demo
+  msgf 0 "Starting $client$nc $CMD_OPT $clt_term $scr1_term"
+  $client$nc $CMD_OPT $clt_term $scr1_term
+  screen -X only
+else
+  msgf 2 "Unable to run client $client$nc due to missing ptys"
+fi
+
+# This is where we run. When the client quits,
+# we are done and need to clean up
+[ $dispmode != photon ] && /usr/local/sbin/getcon -V -e $session
+[ -n "$lclsrvr" ] && monarch_cmd -V Quit
+screen -X select logfile
+sleep 3
+if [ -n "$less_pid" ] && kill -0 $less_pid; then
+  screen -X -p logfile stuff ^Cq
+  sleep 1
+  if kill -0 $less_pid 2>/dev/null; then
+    msg -Vn redoit Follow up with kill to less
+    kill $less_pid 2>/dev/null
+  fi
+fi
