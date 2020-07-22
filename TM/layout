@@ -1,0 +1,59 @@
+#! /bin/bash
+
+# Everything before this point will be executed twice,
+# once before starting screen, once after, so we should
+# limit any informational messages.
+if [ -z "$STY" ]; then
+  screen -t doit -L $0 $*
+  clear # after exiting screen
+  echo "redoit completed, screen closed"
+  exit 0
+fi
+
+msg -Vndoit Starting
+# Define the groups
+#   Logs: For serial status updates
+#   Data: For display of data
+#   Client: For the command line program
+screen -t Logs //group
+screen -X select doit
+screen -t Data //group
+screen -X select doit
+screen -t Client //group
+screen -X layout new Logs
+screen -X select doit
+screen -X group Logs
+screen -t Demo.log
+screen -X stuff "echo This is Demo.log^M"
+
+# Define the layouts
+#   Logs: One big window to cycle through the log outputs
+#   Data: Large window above for data with small window
+#         below for commands
+screen -X layout new Data
+screen -X select Data
+screen -t Demodisp
+# screen -X group Data
+# screen -X select Demodisp
+screen -X stuff "echo This is Demodisp^M"
+# not clear why that select is necessary
+# Isn't the window selected when created?
+# Or does moving it into the group deselect it?
+screen -t HKdisp
+screen -X select HKdisp
+screen -X stuff "echo This is HKdisp^M"
+
+screen -X split
+screen -X focus
+screen -X resize 5
+screen -X select Client
+screen -t clt
+screen -X select clt
+screen -X stuff "echo This is clt^M"
+screen -X group Client
+screen -X select clt
+
+screen -X focus
+
+echo Hit Any Key
+read j
