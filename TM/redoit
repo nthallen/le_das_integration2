@@ -9,9 +9,9 @@ redoit [options]
 redoit [options] stop
   Send Quit command to running system (monarch_cmd)
 redoit [options] not
-  Shuts down any straggling processes after system has stopped (dasctl -Q)
+  Shuts down any straggling processes after system has stopped (monarchctl -Q)
 redoit [options] wait
-  Does not interact with instrument until it is up and operating (dasctl -S)
+  Does not interact with instrument until it is up and operating (monarchctl -S)
 
 options:
   -s use screen for text-mode data display (default)
@@ -40,8 +40,8 @@ statusready=no
 function isready {
   quiet=no
   [ "$1" = "quiet" ] && quiet=yes
-  msgf -2 "dasctl $TM_OPT -VS"
-  dasctl $TM_OPT -VS 2>&1 |
+  msgf -2 "monarchctl $TM_OPT -VS"
+  monarchctl $TM_OPT -VS 2>&1 |
   ( while read j; do
       [ $quiet = no ] && echo $j
       sj=${j#* Status: Ready:}
@@ -84,7 +84,7 @@ case "$arg" in
     exit 0;;
   not)
     echo "Trying harder to stop the instrument"
-    dasctl $TM_OPT -VQ
+    monarchctl $TM_OPT -VQ
     exit 0;;
   wait)
     [ $srcmode = playback ] &&
@@ -171,13 +171,13 @@ if [ $cmd = start ]; then
     #   # playbacksrvr (started later via $lclsrvr)
   elif [ $srcmode = realtime ]; then
     if [ $SERVICE = Installed ]; then
-      dasctl_opt='-r'
-      [ -n "$batchfile" ] && dasctl_opt="-R $batchfile"
+      monarchctl_opt='-r'
+      [ -n "$batchfile" ] && monarchctl_opt="-R $batchfile"
       msgf 0 "Running isready quiet, TM_OPT=$TM_OPT"
       isready quiet
       if [ $statusready = no ]; then
-        msgf 0 "running dasctl -V $TM_OPT $dasctl_opt"
-        dasctl -V $TM_OPT $dasctl_opt
+        msgf 0 "running monarchctl -V $TM_OPT $monarchctl_opt"
+        monarchctl -V $TM_OPT $monarchctl_opt
         isready
       fi
     else
@@ -196,9 +196,9 @@ elif [ $cmd = wait ]; then
       sleep 1
     done
   else
-    waitfor /var/run/linkeng/$Experiment/tm_bfr forever
+    waitfor /var/run/monarch/$Experiment/tm_bfr forever
     msgf 0 "found tm_bfr, waiting for command server"
-    waitfor /var/run/linkeng/$Experiment/server forever
+    waitfor /var/run/monarch/$Experiment/server forever
   fi
 else
   msgf 3 "Unexpected invalid cmd '$cmd'"

@@ -162,8 +162,8 @@ function Launch {
     Launch_pid=$!
     msg -Vn doit "Launch: $Launch_pid $*"
     if [ "$name" != "-" ]; then
-      [ "$name" = "-TMC-" ] && name="/var/run/linkeng/run/$Experiment/$!"
-      [ "${name#/}" = "$name" ] && name="/var/run/linkeng/$Experiment/$name"
+      [ "$name" = "-TMC-" ] && name="/var/run/monarch/run/$Experiment/$!"
+      [ "${name#/}" = "$name" ] && name="/var/run/monarch/$Experiment/$name"
       waitfor $name 10 || {
         msg -Vn doit "Launch namewait failure: $*"
         launch_error=yes
@@ -182,7 +182,7 @@ statusready=no
 function isready {
   quiet=no
   [ "$1" = "quiet" ] && quiet=yes
-  dasctl $TM_OPT -VS 2>&1 |
+  monarchctl $TM_OPT -VS 2>&1 |
   ( while read j; do
       [ $quiet = no ] && echo $j
       sj=${j#* Status: Ready:}
@@ -217,9 +217,9 @@ fi
 #   req: Override is required
 #   done: Override has been requested
 override=no
-dasctl_opt='-r'
+monarchctl_opt='-r'
 if [ $startup = yes -a $srcmode = realtime ]; then
-  [ -n "$batchfile" ] && dasctl_opt="-R $batchfile"
+  [ -n "$batchfile" ] && monarchctl_opt="-R $batchfile"
   if [ $SERVICE = AdHoc ]; then
     nl_error "AdHoc: Would startup flight.sh here"
   fi
@@ -232,7 +232,7 @@ if [ $startup = yes -a $srcmode = realtime ]; then
   else
     isready quiet
     if [ $statusready = no ]; then
-      dasctl -V $TM_OPT $dasctl_opt
+      monarchctl -V $TM_OPT $monarchctl_opt
       isready
     fi
   fi
@@ -394,7 +394,7 @@ fi
 # the flight log
 ## This test can be made more robust
 msg -Vndoit Conditionally starting memo
-memo=/var/run/linkeng/$Experiment/memo
+memo=/var/run/monarch/$Experiment/memo
 if [ ! -e $memo ]; then
   Launch memo memo -o $logfileroot.clt.log
 fi
