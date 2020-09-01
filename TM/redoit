@@ -223,12 +223,12 @@ if [ -n "$rmtlogfile" ]; then
     screen -t logfile /bin/sh -c "echo \$\$ >less.pid.$session; exec less +F $rmtlogfile"
   fi
 fi
-screen -t Demo /usr/local/sbin/getcon -V scr1 $session
+screen -t Demo /usr/local/sbin/getcon -v scr1 $session
 screen -X width -w 69
 #screen -X height -w 8
 # screen -X focus
 #######LOOK HERE
-screen -t clt /usr/local/sbin/getcon -V clt $session
+screen -t clt /usr/local/sbin/getcon -v clt $session
 screen -X height -w 2
 screen -X width -w 80
 # screen -X focus
@@ -278,7 +278,7 @@ fi
 
 # This is where we run. When the client quits,
 # we are done and need to clean up
-[ $dispmode != photon ] && /usr/local/sbin/getcon -V -e $session
+[ $dispmode != photon ] && /usr/local/sbin/getcon -v -e $session
 [ -n "$lclsrvr" ] && monarch_cmd -V Quit
 screen -X select logfile
 sleep 3
