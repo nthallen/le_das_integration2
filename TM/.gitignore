@@ -8,7 +8,7 @@ Demoalgo.cc
 Demoalgooui.cc
 Demoalgo.o
 Demoalgooui.o
-madedoit.dep
+Demodoit.dep
 Democmd.cc
 Democmd.dat
 Democmd.h
@@ -38,7 +38,7 @@ Demotblnc.tmc.dep
 Makefile
 Demodispnc
 Demoalgo
-madedoit
+Demodoit
 Democltnc
 Demosrvr
 Democol

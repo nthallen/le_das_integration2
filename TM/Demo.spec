@@ -9,4 +9,4 @@ IDISTRIB = doit
 
 Demodisp : Demo.tbl
 Demoalgo : Demo.tma
-madedoit : Demo.doit
+Demodoit : Demo.doit
