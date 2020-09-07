@@ -1,187 +1,36 @@
 #! /bin/bash
-#ifdef __USAGE
-#%C [options]
-#  Starts Instrument operation
-#%C [options] stop
-#  Send Quit command to running system
-#%C [options] not
-#  Shuts down any straggling processes after system has stopped
-#%C [options] wait
-#  Does not interact with instrument until it is up and operating
-#
-#options:
-#	-s use screen for text-mode data display
-#	-a use ASCII chars for line-drawing
-#	-n use photon pterms for text-mode data display
-#	-p <run> play back <run>
-#	-i <host> use InetIn to read data from <host>
-#	-t use SerIn as specified in doit
-#	-S <session> specify the session (used internally)
-#
-# SerIn mode can also be indicated by setting environment
-# variable SRCMODE=SerIn, typically in Experiment.config.
-# InetIn can be specified by the same method.
-#endif
+doit=doit
 
-function nl_error {
-  msg -Vn doit "$*"
-  exit 1
+function print_usage {
+cat <<EOF
+$doit [options]
+  Starts Instrument operation
+$doit [options] stop
+  Send Quit command to running system (monarch_cmd)
+$doit [options] not
+  Shuts down any straggling processes after system has stopped (monarchctl -Q)
+$doit [options] wait
+  Does not interact with instrument until it is up and operating (monarchctl -S)
+
+options:
+  -h display this message
+  -s use screen for text-mode data display (default)
+  -a use ASCII chars for line-drawing
+  -p <run> play back <run>
+EOF
 }
 
-. /usr/local/libexec/load_exconfig.sh
-[ -n "$CFG_ERROR" ] && nl_error "$CFG_ERROR"
-
-# Check to make sure we are running in HomeDir
-[ -z "$CltHomeDir" ] && CltHomeDir=$HomeDir
-dir=$PWD
-nnd=${dir%$CltHomeDir}
-[ "$dir" = "$nnd" ] &&
-  nl_error "Not in CltHomeDir $CltHomeDir"
-if [ -n "$nnd" ]; then
-  nd=${nnd#/net/}
-  [ "$nd" = "$nnd" ] &&
-    nl_error "Not in CltHomeDir $CltHomeDir (2)"
-  [ "$nd" = "${nd#*/}" ] ||
-    nl_error "Not in CltHomeDir $CltHomeDir (3)"
-fi
-FltNd=''
-
-# Parse options to select
-#   srcmode as one of realtime, InetIn, SerIn or playback
-#   dispmode as one of screen, pterm or photon
-session=$$
-ncopts=''
-while getopts "ai:p:S:snt" opt; do
-  case $opt in
-    a) ncopts='-a';;
-    i) srcmode=InetIn; InetSrc=$OPTARG;;
-    p) srcmode=playback; Run=$OPTARG;;
-    s) dispmode=screen; dispmodescreen=1;;
-    S) session=$OPTARG;;
-    t) srcmode=SerIn;;
-    n) dispmode=pterm; dispmodepterm=1;;
-    \?) exit 1;; # getopts reports the error
-    :) exit 1;; # getopts reports the error
-  esac
-done
-if [ -n "$srcmode" ]; then
-  [ -n "$InetSrc" -a -n "$Run" ] &&
-    nl_error "Cannot specify both -i and -p"
-else
-  case "$SRCMODE" in
-    SerIn) srcmode=SerIn;;
-    InetIn) srcmode=InetIn;;
-    *) srcmode=realtime;;
-  esac
-fi
-if [ -n "$dispmode" ]; then
-  [ -n "$dispmodescreen" -a -n "$dispmodepterm" ] &&
-    nl_error "Cannot specify both -s and -n"
-else
-  dispmode=screen
-  dispmodescreen=1
-fi
-[ $srcmode = SerIn ] && nl_error "SerIn is not configured"
-
-let sval=$OPTIND-1
-shift $sval
-option=${1:-start}
-
-case $dispmode in
-  screen) nc=nc; ncopt=$ncopts;;
-  pterm) nc=nc; ncopt=$ncopts;;
-  photon) nc='';;
-  *) nl_error "Unknown dispmode: '$dispmode'";;
-esac
-logfileroot=$Experiment
-interacts='Demodisp Democlt';
-extracts='';
-batchfile=interact
-client=playbackclt
-[ $srcmode = realtime ] && client=Democlt
-lclsrvr=playbacksrvr
-
-check_path=no
-startup=no
-case $option in
-  start) startup=yes; check_path=yes;;
-  stop);;
-  not) startup=yes; batchfile=/dev/null;;
-  wait) check_path=yes;;
-  screen);;
-  *) nl_error "Invalid option: '$option'";;
-esac
-
-# Determine the path. Strictly speaking, this does
-# not have to happen before start, but I'd like
-# to check that the required applications exist
-VERSION=1.0
-case $srcmode in
-  playback)
-    # Need to find the data
-    ddir=$Run
-    if [ ! -d $ddir ]; then
-      for base in . $FltNd$HomeDir; do
-        ddir=$base/$Run
-        [ -d $ddir ] && break
-        ddir=$base/raw/$Run
-        [ -d $ddir ] && break
-        for runtype in flight cal data junk; do
-          ddir=$base/raw/$runtype/$Run
-          [ -d $ddir ] && break
-        done
-        [ -d $ddir ] && break
-      done
-    fi
-    [ -d $ddir ] || nl_error "Unable to locate run $Run"
-    [ -f $ddir/VERSION ] && VERSION=`cat $ddir/VERSION`;;
-  *)
-    ddir=$FltNd$HomeDir
-    [ -f VERSION ] && VERSION=`cat VERSION`;;
-esac
-
-if [ $check_path = yes ]; then
-  missing=''
-  for app in $interacts; do
-    [ -x $TMBINDIR/$app$nc -o -x /usr/local/bin/$app$nc ] ||
-      missing="$missing $app$nc"
-  done
-  for app in $extracts; do
-    [ -x $TMBINDIR/$app -o -x /usr/local/bin/$app ] ||
-      missing="$missing $app"
-  done
-  [ -n "$missing" ] &&
-    nl_error "Unable to locate required application(s):$missing"
-fi
-
-function Launch {
-  name=$1
-  shift
-  [ -n "$launch_error" ] && return 1
-  if { $* & }; then
-    Launch_pid=$!
-    msg -Vn doit "Launch: $Launch_pid $*"
-    if [ "$name" != "-" ]; then
-      [ "$name" = "-TMC-" ] && name="/var/run/monarch/run/$Experiment/$!"
-      [ "${name#/}" = "$name" ] && name="/var/run/monarch/$Experiment/$name"
-      waitfor $name 10 || {
-        msg -Vn doit "Launch namewait failure: $*"
-        launch_error=yes
-        return 1
-      }
-    fi
-  else
-    msg -Vn doit "Launch Error: $*"
-    launch_error=yes
-    return 1
-  fi
-  return 0
+function select_arg {
+  n=$1
+  shift $n
+  echo $1
 }
 
 statusready=no
 function isready {
   quiet=no
   [ "$1" = "quiet" ] && quiet=yes
+  msgf -2 "monarchctl $TM_OPT -VS"
   monarchctl $TM_OPT -VS 2>&1 |
   ( while read j; do
       [ $quiet = no ] && echo $j
@@ -194,241 +43,325 @@ function isready {
   ) && statusready=yes
 }
 
-if [ $srcmode = realtime ]; then
-  # SCRIPT_OVERRIDE is the name of a file that will
-  # contain the name of the flight script and will
-  # be read by flight.sh. Setting it to /dev/null
-  # means we can write to it and it won't have any
-  # effect.
-  # [ -z "$SCRIPT_OVERRIDE" ] && SCRIPT_OVERRIDE=/dev/null
-  logfile=$HomeDir/$logfileroot.log
-else  # not realtime
-  RemEx=$Experiment
-  Experiment=$RemEx.PB.$session
-  case $srcmode in
-    InetIn) logfile=$logfileroot.II.log;;
-    SerIn) logfile=$logfileroot.SI.log;;
-    *) logfile=$logfileroot.PB.$session.log;;
+srcmode=realtime
+dispmode=screen
+ncopts=''
+while getopts "hap:st" opt; do
+  case $opt in
+    h) print_usage; exit 0;;
+    a) ncopts='-a';;
+    p) srcmode=playback; Run=$OPTARG;;
+    s) dispmode=screen; dispmodescreen=1;;
+    t) srcmode=SerIn;;
+    \?) exit 1;; # getopts reports the error
+    :) exit 1;; # getopts reports the error
+  esac
+done
+
+# We haven't finished parsing the arguments, but we can
+# be pretty sure whatever it is, we will need to read
+# the configuration to execute it.
+. /usr/local/libexec/load_exconfig.sh
+msgProgram=$doit
+[ -n "$CFG_ERROR" ] && msgf 3 "$CFG_ERROR"
+[ -n "$FlightNode" ] && export FlightNode
+
+arg=`select_arg $OPTIND $*`
+case "$arg" in
+  stop)
+    echo "Trying to stop the instrument"
+    monarch_cmd -V $CMD_OPT quit
+    exit 0;;
+  not)
+    echo "Trying harder to stop the instrument"
+    monarchctl $TM_OPT -VQ
+    exit 0;;
+  wait)
+    [ $srcmode = playback ] &&
+      msgf 3 "wait is not supported for playback"
+    cmd=wait;;
+  '') cmd=start;;
+  *) msgf 3 "Invalid command: '$arg'";;
+esac
+
+if [ -n "$srcmode" ]; then
+  [ "$srcmode" = "SerIn" -a -n "$Run" ] &&
+    msgf 3 "Cannot specify both -t and -p"
+else
+  case "$SRCMODE" in
+    SerIn) srcmode=SerIn;;
+    InetIn) srcmode=InetIn;;
+    *) srcmode=realtime;;
   esac
 fi
+[ $srcmode = SerIn ] && msgf 3 "SerIn is not configured"
+case $dispmode in
+  screen) nc=nc; ncopt=$ncopts;;
+  pterm) nc=nc; ncopt=$ncopts;;
+  photon) nc='';;
+  *) msgf 3 "Unknown dispmode: '$dispmode'";;
+esac
 
-# override:
-#   no: We don't need to override
-#   req: Override is required
-#   done: Override has been requested
-override=no
-monarchctl_opt='-r'
-if [ $startup = yes -a $srcmode = realtime ]; then
-  [ -n "$batchfile" ] && monarchctl_opt="-R $batchfile"
-  if [ $SERVICE = AdHoc ]; then
-    nl_error "AdHoc: Would startup flight.sh here"
+umask 2
+
+# Check that we are running from the correct
+# location. This code was more complicated
+# under QNX to handle /net
+[ -z "$CltHomeDir" ] && CltHomeDir=$HomeDir
+dir=$PWD
+[ "$dir" = "$CltHomeDir" ] ||
+  msgf 3 "Not in CltHomeDir $CltHomeDir"
+
+# We are now in 'start' or 'wait'
+# srcmode is playback or realtime, though could eventually include
+# SerIn and/or InetIn.
+
+# mkdoit can add more logic here.
+# We do not launch lclsrvr if $srcmode = realtime -a -z "$FlightNode"
+# (i.e. running flight.sh on the local machine)
+# The other $srcmodes (SerIn, InetIn) will default to playbacksrvr,
+# but can be overridden.
+#-----------------
+# lclsrvr=playbacksrvr
+# batchfile=interact
+# client=playbackclt
+# [ $srcmode = realtime ] && client=Democlt
+# [ $srcmode = realtime -a $FltNode_Access = Local ] && lclsrvr=''
+
+logfileroot=$Experiment
+interacts='Demodisp Democlt';
+extracts='';
+batchfile=interact
+client=playbackclt
+[ $srcmode = realtime ] && client=Democlt
+lclsrvr=playbacksrvr
+# lcllogfile is the file we want local memo to write to
+# rmtlogfile is the file we would like to display with less,
+#  even if it is not really remote.
+if [ $srcmode = realtime ]; then
+  if [ $FltNode_Access = Remote ]; then
+    lcllogfile=$logfileroot.clt.log
+    rmtlogfile=$HomeDir/$logfileroot.log
+  else
+    lclsrvr=''
+    rmtlogfile=$logfileroot.log
   fi
-  if [ $option = wait ]; then
-    msg -Vn doit "Waiting for startup"
+else # not realtime
+  RemEx=$Experiment
+  Experiment=$RemEx.PB.$session
+  lcllogfile=$Experiment.log
+fi
+
+# At this point cmd can only be 'start' or 'wait'. Thus
+# a) we always want to check paths, so don't need check_path
+# b) startup var is redundant with cmd = start
+# check_path=no
+# startup=no
+# case $cmd in
+#   start) startup=yes; check_path=yes;;
+#   stop);;
+#   not);;
+#   wait) check_path=yes;;
+#   screen);;
+#   *) nl_error "Invalid option: '$option'";;
+# esac
+
+# Determine the path. Strictly speaking, this does
+# not have to happen before start, but I'd like
+# to check that the required applications exist
+VERSION=1.0
+case $srcmode in
+  playback)
+    # Need to find the data
+    ddir=`locate_rundir $Run | tr : /`
+    [ -z "$ddir" ] && msgf 3 "Unable to locate run $Run"
+    [ -f $ddir/VERSION ] && VERSION=`cat $ddir/VERSION`;;
+  *)
+    ddir=$HomeDir
+    [ -f VERSION ] && VERSION=`cat VERSION`;;
+esac
+
+TMBINDIR=$PWD/bin/$VERSION
+[ -d $TMBINDIR ] ||
+  msgf 3 "Unable to locate bin dir for VERSION $VERSION"
+export PATH=$TMBINDIR:$PATH
+
+missing=''
+for app in $interacts; do
+  f=`which $app$nc`
+  [ -n "$f" -a -x "$f" ] ||
+    missing="$missing $app$nc"
+done
+for app in $extracts; do
+  f=`which $app`
+  [ -n "$f" -a -x "$f" ] ||
+    missing="$missing $app"
+done
+[ -n "$missing" ] &&
+  msgf 3 "Unable to locate required application(s):$missing"
+
+#-----------------------------------------------------
+# Everything before this point will be executed twice,
+# once before starting screen, once after, so we should
+# limit any informational messages.
+if [ -z "$STY" ]; then
+  # echo "cmd is '$cmd' srcmode is '$srcmode' dispmode is '$dispmode'"
+  # hit_any_key
+  screen -t $doit $0 $*
+  clear # after exiting screen
+  echo "$doit completed, screen closed"
+  exit 0
+fi
+
+session=$$
+screen -X logfile "$doit.$session.log"
+screen -X log on
+
+# Running under screen, session $session"
+
+# Until we have sessions, the only distinction we can make
+# about where we connect is local or remote.
+#
+# Startup local memo: The only case where we would not want to
+# start a local memo is if srcmode is realtime and there is no
+# FlightNode. In that case, we are starting up an interact script
+# on the local machine, and interact scripts start up their own
+# memo.
+[ -n "$lcllogfile" ] &&
+  Launch memo memo -o $lcllogfile -l4
+
+if [ $cmd = start ]; then
+  if [ $srcmode = playback ]; then
+    # Startup playback modules:
+    Launch tm_bfr -s Unix
+    Launch tm_gen rdr -P $ddir -a
+    #   # playbacksrvr (started later via $lclsrvr)
+  elif [ $srcmode = realtime ]; then
+    if [ $SERVICE = Installed ]; then
+      monarchctl_opt='-r'
+      [ -n "$batchfile" ] && monarchctl_opt="-R $batchfile"
+      msgf 0 "Running isready quiet, TM_OPT=$TM_OPT"
+      isready quiet
+      if [ $statusready = no ]; then
+        msgf 0 "running monarchctl -V $TM_OPT $monarchctl_opt"
+        monarchctl -V $TM_OPT $monarchctl_opt
+        isready
+      fi
+    else
+      msgf 0 "Starting flight.sh"
+      screen -t flight.sh /usr/local/libexec/flight.sh
+      msgf 0 "Waiting for memo"
+      waitfor -q /var/run/monarch/$Experiment/memo forever
+      msgVdefault=''
+      sleep 1
+      msgf 0 "Waiting for tm_bfr"
+      waitfor -q /var/run/monarch/$Experiment/tm_bfr forever
+      msgf 0 "found tm_bfr, waiting for cmd server"
+      waitfor -q /var/run/monarch/$Experiment/cmd forever
+    fi
+  else
+    msgf 3 "srcmode='$srcmode' not implemented in start"
+  fi
+elif [ $cmd = wait ]; then
+  [ $srcmode = realtime ] || msgf 3 "Invalid srcmode '$srcmode'"
+  msgf 0 "Waiting for startup"
+  if [ $SERVICE = Installed ]; then
     while [ statusready = no ]; do
       isready quiet
       sleep 1
     done
   else
-    isready quiet
-    if [ $statusready = no ]; then
-      monarchctl -V $TM_OPT $monarchctl_opt
-      isready
-    fi
+    waitfor /var/run/monarch/$Experiment/tm_bfr forever
+    msgf 0 "found tm_bfr, waiting for command server"
+    waitfor /var/run/monarch/$Experiment/server forever
   fi
-  [ $statusready = no ] && nl_error "Startup failed"
-# else
-  # nl_error "Handle non-startup or non-realtime here"
+else
+  msgf 3 "Unexpected invalid cmd '$cmd'"
 fi
 
-# waiting=no
-# signaled=no
-# fltshstarted=no
-# while true; do
-#   see_parent=no
-#   # np < 2 means parent is not running
-#   ppid=`pidin -n $FlightNode -p parent -fa 2>/dev/null | grep -v pid`
-#   [ -n "$ppid" ] && see_parent=yes
-#   if [ $see_parent = yes -o -z "$FltNd" ]; then
-#     if [ ! -e $cmdsrvr ]; then
-#       if [ $see_parent = yes ]; then
-#         if [ $override = done -a ! -f $SCRIPT_OVERRIDE ]; then
-#           if [ $option = not ]; then
-#             exit 0
-#           else
-#             nl_error "Override observed but startup apparently failed"
-#           fi
-#         fi
-#         [ $override = auto ] &&
-#           nl_error "Default startup apparently failed"
-#         if [ $signaled = yes ]; then
-#           echo "ppid = '$ppid' cmdsrvr = '$cmdsrvr'"
-#           nl_error "Parent w/o cmdsrvr after signaling"
-#         fi
-#       fi
-#       if [ $startup = yes ]; then
-#         [ $override = no ] && override=auto
-#         if [ $see_parent = yes ]; then
-#           # echo signaling parent
-#           sudo /usr/local/sbin/signal_parent $FlightNode
-#           signaled=yes
-#           oppid=$ppid
-#           ppid=`pidin -n $FlightNode -p parent -fa 2>/dev/null | grep -v pid`
-#           nw=1
-#           while [ -n "$ppid" -a "$ppid" = "$oppid" ]; do
-#             [ $nw -ge 3 ] &&
-#               nl_error Signaling parent failed
-#             sleep 1
-#             ppid=`pidin -n $FlightNode -p parent -fa 2>/dev/null | grep -v pid`
-#             let nw=nw+1
-#           done
-#           [ -z "$FltNd" -a $option = not ] && exit 0
-#         elif [ $srcmode = realtime ]; then
-#           if [ $fltshstarted = no ]; then
-#             if [ $dispmode = screen ]; then
-#               echo "Starting flight.sh on /dev/con1"
-#               on -t /dev/con1 /usr/local/sbin/flight.sh &
-#             else
-#               tty=`tty`
-#               echo "Starting flight.sh in a pterm"
-#               on -t $tty pterm /usr/local/sbin/flight.sh &
-#             fi
-#             fltshstarted=yes
-#           fi
-#         else
-#           Launch memo memo -o $logfile 
-#           Launch TM/DCo TMbfr
-#           if [ $srcmode = playback ]; then
-#             Launch DG/cmd rdr -P $ddir -a
-#           elif [ $srcmode = InetIn ]; then
-#             Launch DG/cmd InetIn
-#           fi
-#           Launch cmd/server $lclsrvr
-#           if [ -n "$launch_error" ]; then
-#             msg -Vn doit "Launch failed: cleaning up"
-#             exec parent -qt1
-#           fi
-#         fi
-#       elif [ $option = stop ]; then
-#         nl_error "Could not locate $Experiment's command server"
-#       fi
-#     fi
-#   fi
-# 
-#   if [ -e $cmdsrvr ]; then
-#     case $option in
-#       not)
-#         nl_error "Instrument is in operation: quit first";;
-#       stop)
-#         echo "Quit" >$cmdsrvr
-#         exit 0;;
-#       start) break;;
-#       wait) break;;
-#       screen) break;;
-#       *) nl_error "Unrecognized option '$option'";;
-#     esac
-#   fi
-# 
-#   if [ $waiting = no ]; then
-#     echo "Waiting for parent or command server on node $FlightNode"
-#     waiting=yes
-#   fi
-#   sleep 1
-# done
-
-rmt_cmd=''
-[ $FltNode_Access = Remote ] && rmt_cmd='ssh -t $FlightNode'
-
-# allocate consoles as necessary
-case $dispmode in
-  screen)
-    if [ $option != screen ]; then
-      rc=screenrc.$session
-      { echo startup_message off
-        echo split
-        echo focus
-        echo resize 3
-        echo focus
-        echo "screen -t $logfile /bin/sh -c \"echo \$\$ >less.pid.$session; exec $rmt_cmd less +F $logfile\""
-        echo screen -t Demo /usr/local/sbin/getcon $gcopt scr1 $session
-        echo width -w 20
-        #echo height -w 8
-  echo focus
-  echo screen -t clt /usr/local/sbin/getcon $gcopt clt $session
-  echo height -w 2
-  echo width -w 80
-  echo focus
-        pbarg=''
-        [ $srcmode = playback ] && pbarg=" -p $Run"
-        echo screen -t doit $0 $pbarg $ncopt -sS $session screen
-        echo select Demo
-      } >$rc
-      screen -c $rc
-      clear
-      rm $rc
-      exit 0
-    fi;;
-  pterm)
-    ### Start pterms for each disp screen and clt
-    pterm -t Demo -m 8x20 -g 8x20 -U /usr/local/sbin/getcon $gcopt scr1 $session &
-    pterm -t clt -m 2x80 -g 2x80 -y 90% -x 0 -U /usr/local/sbin/getcon $gcopt clt $session &
-    ;;
-  *)
-esac
-    
-msg -Vndoit Handling less.pid.$session
-pterm_pid=''
-if [ $dispmode != screen ]; then
-  pterm -t $logfile $rmt_cmd less +F $logfile &
-  pterm_pid=$!
+# At this point, we can assume that memo, tm_bfr and server
+# are running, so we can start all the UI clients
+# Display programs, keyboard client, etc.
+# We will point getcon and disp programs to the lclsrvr, but
+# still need to figure out how to tell lclsrvr to quit.
+# I guess I need a Stopper app to send Quit where I want.
+# That would work for this as well as 'doit stop'.
+[ -n "$lclsrvr" ] &&
+  Launch cmd $lclsrvr
+if [ -n "$rmtlogfile" ]; then
+  # log="-Logfile \"less.$session.log\" -L"
+  if [ $FltNode_Access = Remote ]; then
+    msgf 0 "Starting less on remote system"
+    screen -t logfile /bin/sh -c "echo \$\$ >less.pid.$session; exec $SSH_CMD less +F $rmtlogfile"
+  else
+    msgf 0 "Starting less on local system"
+    screen -t logfile /bin/sh -c "echo \$\$ >less.pid.$session; exec less +F $rmtlogfile"
+  fi
 fi
-if [ $dispmode = screen -a -f less.pid.$session ]; then
-  # pterm_pid=`pidin -P less arg | grep -F "less +F $logfile" | head -n1`
-  # pterm_pid=${pterm_pid% less +F $logfile}
-  pterm_pid=`cat less.pid.$session`
+
+# gcopt definition might need to be moved earlier if it
+# needs to be defined conditionally
+gcopt=-v
+screen -t Demo /usr/local/sbin/getcon $gcopt scr1 $session
+screen -X width -w 20
+#screen -x height -w 8
+screen -t clt /usr/local/sbin/getcon -v clt $session
+screen -X height -w 2
+screen -X width -w 80
+screen -X select $doit
+
+msgf 0 Handling less.pid.$session
+less_pid=''
+if [ -f less.pid.$session ]; then
+  less_pid=`cat less.pid.$session`
   rm -f less.pid.$session
-fi
-
-# Now we want the display and client programs to
-# talk to a local memo to avoid cluttering up
-# the flight log
-## This test can be made more robust
-msg -Vndoit Conditionally starting memo
-memo=/var/run/monarch/$Experiment/memo
-if [ ! -e $memo ]; then
-  Launch memo memo -o $logfileroot.clt.log
+  msg -V "Recovered less_pid='$less_pid'"
 fi
 
 # Now collect display consoles for each disp screen and clt
-msg -Vndoit collecting screens
+msgf 0 collecting screens
 for screen in scr1 clt; do
   term=''
-  if [ $dispmode != photon ]; then
-    waitfor pty.$screen.$session 3 ||
-      nl_error pty.$screen.$session did not appear
+  if waitfor pty.$screen.$session 3; then
     term=`cat pty.$screen.$session`
     rm pty.$screen.$session
+    eval ${screen}_term=$term
+  else
+    msgf 2 pty.$screen.$session did not appear
   fi
-  eval ${screen}_term=$term
 done
 
-Launch -TMC- Demodisp$nc $ncopt $TM_OPT $scr1_term
-$client$nc $CMD_OPT $clt_term $scr1_term
+if [ -n "$scr1_term" ]; then
+  msgf 0 "Starting Demodisp$nc $ncopt $TM_OPT $scr1_term"
+  Launch -TMC- Demodisp$nc $ncopt $TM_OPT $scr1_term
+else
+  msgf 1 "Skipping Demodisp$nc"
+fi
+if [ -n $clt_term -o -n $scr1_term ]; then
+  screen -X split
+  screen -X focus
+  screen -X resize 3
+  screen -X select clt
+  screen -X focus
+  screen -X select Demo
+  msgf 0 "Starting $client$nc $CMD_OPT $clt_term $scr1_term"
+  $client$nc $CMD_OPT $clt_term $scr1_term
+else
+  msgf 2 "Unable to run client $client$nc due to missing ptys"
+fi
 
 # This is where we run. When the client quits,
 # we are done and need to clean up
-
-[ $dispmode != photon ] && /usr/local/sbin/getcon $CMD_OPT -V -e $session
-
-# Leave the log up for a few seconds to view shutdown status
-if [ -n "$pterm_pid" ]; then
-  sleep 2
-  kill $pterm_pid
-  # wait a bit so parent needn't report the termination
+screen -X only
+[ $dispmode != photon ] && /usr/local/sbin/getcon -v -e $session
+[ -n "$lclsrvr" ] && monarch_cmd -V Quit
+screen -X select logfile
+sleep 1
+if [ -n "$less_pid" ] && kill -0 $less_pid; then
+  screen -X -p logfile stuff ^Cq
   sleep 1
-  echo "doit: Invoking parent for cleanup"
-  exec parent -V -qt1
-else
-  echo "doit: Invoking parent for cleanup"
-  exec parent -V -qt3
+  if kill -0 $less_pid 2>/dev/null; then
+    msg -Vn $doit Follow up with kill to less
+    kill $less_pid 2>/dev/null
+  fi
 fi
