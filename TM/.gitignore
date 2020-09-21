@@ -1,4 +1,6 @@
 Demotblnc.tmc
+Demo2tblnc.tmc
+Demo3tblnc.tmc
 Demodispnc.cc
 Demodispncoui.cc
 Demodispnc.o
@@ -31,6 +33,8 @@ Demoengextoui.cc
 Demoengext.o
 Demoengextoui.o
 Demotblnc.tmc.dep
+Demo2tblnc.tmc.dep
+Demo3tblnc.tmc.dep
 *.err
 *.o
 *.exe

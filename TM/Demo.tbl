@@ -1,3 +1,5 @@
 Input "TMbase.tbl";
 
-{ [TMbaseB] }
+{ HBox { |+; [TMbaseB]; |+ };
+  -;
+}

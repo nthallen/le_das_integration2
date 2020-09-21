@@ -213,11 +213,15 @@ if [ -z "$STY" ]; then
   exit 0
 fi
 
+# Running under screen
 session=$$
 screen -X logfile "$doit.$session.log"
 screen -X log on
-
-# Running under screen, session $session"
+screen -X split
+screen -X focus
+screen -X resize 3
+screen -X focus
+clear
 
 # Until we have sessions, the only distinction we can make
 # about where we connect is local or remote.
@@ -303,11 +307,23 @@ fi
 # needs to be defined conditionally
 gcopt=-v
 screen -t Demo /usr/local/sbin/getcon $gcopt scr1 $session
-screen -X width -w 20
-#screen -x height -w 8
+screen -X select Demo
+screen -X width -w 22
+#screen -x height -w 9
+screen -t Demo2 /usr/local/sbin/getcon $gcopt scr2 $session
+screen -X select Demo2
+screen -X width -w 22
+#screen -x height -w 9
+screen -t Demo3 /usr/local/sbin/getcon $gcopt scr3 $session
+screen -X select Demo3
+screen -X width -w 22
+#screen -x height -w 9
 screen -t clt /usr/local/sbin/getcon -v clt $session
+screen -X focus
+screen -X select clt
 screen -X height -w 2
 screen -X width -w 80
+screen -X focus
 screen -X select $doit
 
 msgf 0 Handling less.pid.$session
@@ -320,7 +336,7 @@ fi
 
 # Now collect display consoles for each disp screen and clt
 msgf 0 collecting screens
-for screen in scr1 clt; do
+for screen in scr1 scr2 scr3 clt; do
   term=''
   if waitfor pty.$screen.$session 3; then
     term=`cat pty.$screen.$session`
@@ -331,21 +347,17 @@ for screen in scr1 clt; do
   fi
 done
 
-if [ -n "$scr1_term" ]; then
-  msgf 0 "Starting Demodisp$nc $ncopt $TM_OPT $scr1_term"
-  Launch -TMC- Demodisp$nc $ncopt $TM_OPT $scr1_term
+if [ -n "$scr1_term" -a -n "$scr2_term" -a -n "$scr3_term" ]; then
+  msgf 0 "Starting Demodisp$nc $ncopt $TM_OPT $scr1_term $scr2_term $scr3_term"
+  Launch -TMC- Demodisp$nc $ncopt $TM_OPT $scr1_term $scr2_term $scr3_term
+  screen -X select Demo
 else
   msgf 1 "Skipping Demodisp$nc"
 fi
-if [ -n $clt_term -o -n $scr1_term ]; then
-  screen -X split
-  screen -X focus
-  screen -X resize 3
-  screen -X select clt
-  screen -X focus
-  screen -X select Demo
-  msgf 0 "Starting $client$nc $CMD_OPT $clt_term $scr1_term"
-  $client$nc $CMD_OPT $clt_term $scr1_term
+
+if [ -n $clt_term -o -n $scr1_term -o -n $scr2_term -o -n $scr3_term ]; then
+  msgf 0 "Starting $client$nc $CMD_OPT $clt_term $scr1_term $scr2_term $scr3_term"
+  $client$nc $CMD_OPT $clt_term $scr1_term $scr2_term $scr3_term
 else
   msgf 2 "Unable to run client $client$nc due to missing ptys"
 fi

@@ -1,0 +1,10 @@
+Input "TMbase.tbl";
+
+TMbase3 {
+  HBox{ +-; Title: "System 3"; -+ };
+  [TMbase]
+}
+
+{ HBox { |+; [TMbase3]; |+ };
+  -;
+}
