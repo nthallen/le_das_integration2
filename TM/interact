@@ -1,3 +1,33 @@
+function SDebug {
+  name=$1
+  shortname=$name
+  shift
+  prog=$1
+  echo "SDebug $name $*"
+  screen -t gdb gdb --args $*
+  if [ "$name" != "-" ]; then
+    pid=''
+    while [ -z "$pid" ]; do
+      sleep 1
+      pid=`ps | sed -ne 's/^ *\([^ ]*\).*\/'$prog'$/\1/p'`
+    done
+    echo "SDebug PID for '$prog' is '$pid'"
+    [ "$name" = "-TMC-" ] && name="/var/run/monarch/run/$Experiment/$pid"
+    [ "${name#/}" = "$name" ] && name="/var/run/monarch/$Experiment/$name"
+    [ -n "$VERBOSE" ] &&
+      msg -Vn flight.sh "[DEBUG] Launch: Waiting for $Launch_pid:$name"
+    waitfor $name forever || {
+      msg -Vn flight.sh "[ERROR] Launch: namewait failure: $*"
+      msg -Vn flight.sh "[DEBUG] Launch: name='$name'"
+      launch_error="namewait failed on $*"
+      return 1
+    }
+    [ "$shortname" = "tm_bfr" ] && have_tm_bfr='yes'
+    [ "$shortname" = "tm_gen" ] && have_tm_gen='yes'
+    [ "$shortname" = "cmd" ] && have_cmd='yes'
+  fi
+}
+
   Launch      memo   memo -o $Experiment.log -l4
               [ -z "$launch_err" ] &&
                 msg "Running script interact"
