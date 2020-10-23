@@ -9,4 +9,5 @@ IDISTRIB = doit
 
 Demodisp : Demo.tbl Demo2.tbl Demo3.tbl
 Demoalgo : Demo.tma
+Demojsonext : TMbase.genui
 doit : Demo.doit

@@ -10,6 +10,13 @@ Demoalgo.cc
 Demoalgooui.cc
 Demoalgo.o
 Demoalgooui.o
+Demojsonext.cdf
+Demojsonextcdf.oui
+Demojsonextcdf.tmc
+Demojsonext.cc
+Demojsonextoui.cc
+Demojsonext.o
+Demojsonextoui.o
 doit.dep
 Democmd.cc
 Democmd.dat
@@ -42,6 +49,7 @@ Demo3tblnc.tmc.dep
 Makefile
 Demodispnc
 Demoalgo
+Demojsonext
 doit
 Democltnc
 Demosrvr

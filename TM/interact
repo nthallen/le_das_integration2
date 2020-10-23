@@ -7,4 +7,5 @@
   Launch      cmd    Demosrvr -s Both -v
 # Launch      -      driver -v
   Launch      -      tmdf
+  Launch      -TMC-  Demojsonext -v
   Launch      -      Demoalgo -v
